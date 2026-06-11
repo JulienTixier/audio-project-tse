@@ -1,0 +1,28 @@
+services:
+  diarization:
+    build: .
+    image: audio-diarization:latest
+
+    # Passe le token HuggingFace depuis le fichier .env
+    env_file:
+      - .env
+
+    volumes:
+      # Dossier source audio (lecture seule)
+      - ./audio:/data:ro
+      # Dossier de sortie JSON
+      - ./output:/output
+      # Cache Silero VAD + pyannote (évite le re-téléchargement)
+      - torch_hub_cache:/root/.cache/torch/hub
+      - hf_cache:/root/.cache/huggingface
+
+    # Commande par défaut : traiter tous les wav du dossier /data
+    # Surcharger avec : docker compose run diarization /data/mon_fichier.wav
+    command: ["--help"]
+
+    # Pas de restart automatique (traitement ponctuel)
+    restart: "no"
+
+volumes:
+  torch_hub_cache:
+  hf_cache:

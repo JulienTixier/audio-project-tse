@@ -1,0 +1,13 @@
+# ── Audio ───────────────────────────────────────────────────────────────────── 
+librosa==0.10.2
+soundfile==0.12.1
+
+# ── Diarisation ───────────────────────────────────────────────────────────────
+pyannote.audio==3.3.2
+
+# ── Utilitaires ───────────────────────────────────────────────────────────────
+numpy<2.0
+scipy>=1.11
+
+# huggingface_hub ≥ 0.17 supprime use_auth_token que pyannote 3.x appelle en interne
+huggingface_hub>=0.13.0,<0.17.0
