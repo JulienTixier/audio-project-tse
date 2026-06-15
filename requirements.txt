@@ -1,0 +1,27 @@
+# ── Audio ─────────────────────────────────────────────────────────────────────
+librosa==0.10.2
+soundfile==0.12.1
+pydub==0.25.1
+
+# ── Diarisation & Embedding ───────────────────────────────────────────────────
+# pyannote.audio 3.1.x est la version utilisée dans le notebook
+# Fixer à 3.1.x pour éviter les breaking changes de 3.3+
+pyannote.audio==3.1.1
+
+# ── Transcription ─────────────────────────────────────────────────────────────
+# faster-whisper : inférence INT8 optimisée CPU (via CTranslate2)
+# compatible ARM64 (Pi 5 et Jetson Orin)
+faster-whisper==1.0.3
+
+# ── Utilitaires ───────────────────────────────────────────────────────────────
+numpy<2.0
+scipy>=1.11
+
+# huggingface_hub : contrainte issue de pyannote 3.1 (use_auth_token)
+# 0.17+ supprime use_auth_token → garder <0.17 pour pyannote 3.1
+# Pour pyannote 3.3+, monter à huggingface_hub>=0.20
+huggingface_hub>=0.13.0,<0.17.0
+
+# Silero VAD est chargé via torch.hub (pas d'install pip direct)
+# Il nécessite : omegaconf
+omegaconf>=2.1

@@ -1,0 +1,32 @@
+services:
+  pipeline_complete:
+    build: .
+    image: pipeline_complete
+    env_file: .env
+    volumes:
+      # Audio en entrée (lecture seule)
+      - ./audio:/data:ro
+      # Résultats JSON
+      - ./output:/output
+      # Cache persistant des modèles (Silero ~3 Mo, pyannote ~300 Mo, Whisper ~150 Mo)
+      - torch_hub_cache:/cache/torch
+      - hf_cache:/cache/huggingface
+
+    # Répertoire de travail temporaire en RAM (évite les I/O sur la carte SD)
+    # Ajuster la taille selon la durée des fichiers audio traités
+    tmpfs:
+      - /workdir:size=512m
+
+    # Sur Raspberry Pi 5 : laisser commenté
+    # Sur Jetson Orin    : décommenter
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: all
+    #           capabilities: [gpu]
+
+volumes:
+  torch_hub_cache:
+  hf_cache:

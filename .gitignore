@@ -1,0 +1,10 @@
+.env
+*.wav
+*.mp3
+*.flac
+*.ogg
+*.m4a
+audio/
+output/
+__pycache__/
+*.pyc
