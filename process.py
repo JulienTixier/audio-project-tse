@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """
-PA-10 — Pipeline Complète de Traitement Audio
+PA-10 - Pipeline Complète de Traitement Audio
 Sprint 5 | Équipe P07 | Projet Stellantis
 
 Modules : VAD (Silero) + Diarisation (pyannote) + Transcription (faster-whisper)
-          + Wake word + Enrôlement conducteur/passager
+          + Wake word + Enrolement conducteur/passager
           + Genre/Âge (pitch F0 + audeering wav2vec2)
           + DER (optionnel, via fichier RTTM)
           + Export JSON
@@ -54,9 +54,9 @@ WAKE_WORD_VARIANTS = [
 AG_MODEL_NAME = "audeering/wav2vec2-large-robust-6-ft-age-gender"
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 # Architecture modèle Genre/Âge (audeering)
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 
 class _ModelHead(nn.Module):
     def __init__(self, config, num_labels):
@@ -87,9 +87,9 @@ class _AgeGenderModel(nn.Module):
         return hidden, self.age(hidden), self.gender(hidden)
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 # Chargement des modèles
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 
 def load_models(hf_token: str, whisper_model_size: str = "base", device: str = "cpu"):
     """Charge tous les modèles nécessaires à la pipeline."""
@@ -106,23 +106,23 @@ def load_models(hf_token: str, whisper_model_size: str = "base", device: str = "
             )
         torchaudio.AudioMetaData = AudioMetaData
 
-    log.info("Chargement pyannote diarisation…")
+    log.info("Chargement pyannote diarisation...")
     from pyannote.audio import Pipeline, Model, Inference
 
     diarization_pipeline = Pipeline.from_pretrained(
         "pyannote/speaker-diarization-3.1", use_auth_token=hf_token
     )
     diarization_pipeline = diarization_pipeline.to(torch.device(device))
-    log.info("✅ pyannote diarisation chargé")
+    log.info("[OK] pyannote diarisation charge")
 
-    log.info("Chargement pyannote embedding…")
+    log.info("Chargement pyannote embedding...")
     embedding_model = Inference(
         Model.from_pretrained("pyannote/embedding", use_auth_token=hf_token),
         window="whole",
     )
-    log.info("✅ pyannote embedding chargé")
+    log.info("[OK] pyannote embedding charge")
 
-    log.info("Chargement Silero VAD…")
+    log.info("Chargement Silero VAD...")
     vad_model, vad_utils = torch.hub.load(
         repo_or_dir="snakers4/silero-vad",
         model="silero_vad",
@@ -130,15 +130,15 @@ def load_models(hf_token: str, whisper_model_size: str = "base", device: str = "
         trust_repo=True,
     )
     (get_speech_timestamps, save_audio, read_audio, VADIterator, collect_chunks) = vad_utils
-    log.info("✅ Silero VAD chargé")
+    log.info("[OK] Silero VAD charge")
 
-    log.info("Chargement faster-whisper (%s, %s)…", whisper_model_size, device)
+    log.info("Chargement faster-whisper (%s, %s)...", whisper_model_size, device)
     from faster_whisper import WhisperModel
     compute_type = "float16" if device == "cuda" else "int8"
     whisper = WhisperModel(whisper_model_size, device=device, compute_type=compute_type)
-    log.info("✅ faster-whisper %s chargé (%s, %s)", whisper_model_size, device, compute_type)
+    log.info("[OK] faster-whisper %s charge (%s, %s)", whisper_model_size, device, compute_type)
 
-    log.info("Chargement audeering genre+âge…")
+    log.info("Chargement audeering genre+age...")
     from transformers import Wav2Vec2Processor, Wav2Vec2Config
     from safetensors.torch import load_file
     from huggingface_hub import hf_hub_download
@@ -150,7 +150,7 @@ def load_models(hf_token: str, whisper_model_size: str = "base", device: str = "
     ag_model.load_state_dict(load_file(ag_weights), strict=False)
     ag_model     = ag_model.to(torch.device(device))
     ag_model.eval()
-    log.info("✅ audeering genre+âge chargé")
+    log.info("[OK] audeering genre+age charge")
 
     return {
         "diarization":        diarization_pipeline,
@@ -164,9 +164,9 @@ def load_models(hf_token: str, whisper_model_size: str = "base", device: str = "
     }
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 # Fonctions utilitaires
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 
 def convert_audio(filepath: str, out_path: str) -> float:
     """Convertit n'importe quel format audio en WAV mono 16 kHz."""
@@ -174,7 +174,7 @@ def convert_audio(filepath: str, out_path: str) -> float:
     audio = audio.set_channels(1).set_frame_rate(SAMPLE_RATE)
     audio.export(out_path, format="wav")
     duration = len(audio) / 1000
-    log.info("✅ Converti → %s (%.1fs)", out_path, duration)
+    log.info("[OK] Converti en %s (%.1fs)", out_path, duration)
     return duration
 
 
@@ -193,7 +193,7 @@ def run_diarization(audio_path: str, pipeline, num_speakers=None) -> list:
     kwargs = {}
     if num_speakers:
         kwargs["num_speakers"] = num_speakers
-    log.info("⏳ Calcul de la diarisation en cours (peut prendre plusieurs minutes sur CPU)…")
+    log.info(" Calcul de la diarisation en cours (peut prendre plusieurs minutes sur CPU)...")
     diarization = pipeline(audio_path, **kwargs)
     segments = []
     for segment, _, speaker in diarization.itertracks(yield_label=True):
@@ -253,7 +253,7 @@ def predict_gender_age(audio_array: np.ndarray, models: dict) -> dict:
     Genre via pitch F0 (robuste en français), âge via audeering wav2vec2.
     Retourne un dict : gender, confidence, pitch_f0_mean, age_estimate.
     """
-    # ── Genre (F0) ────────────────────────────────────────────────────────────
+    # -- Genre (F0) ------------------------------------------------------------
     f0_values = estimate_f0(audio_array)
     if len(f0_values) > 0:
         mean_f0    = float(np.mean(f0_values))
@@ -262,7 +262,7 @@ def predict_gender_age(audio_array: np.ndarray, models: dict) -> dict:
     else:
         mean_f0, gender, confidence = 0.0, "unknown", 0.0
 
-    # ── Âge (audeering) ───────────────────────────────────────────────────────
+    # -- Âge (audeering) -------------------------------------------------------
     processor = models["ag_processor"]
     ag_model  = models["ag_model"]
     ag_device = models["ag_device"]
@@ -306,26 +306,26 @@ def compute_der(reference_rttm_path: str, diarization_segments: list) -> float:
     return round(der * 100, 2)
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 # Étapes de la pipeline
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 
 def step_vad(audio_1d: torch.Tensor, models: dict):
-    log.info("── VAD ──────────────────────────────────────────────")
+    log.info("-- VAD ----------------------------------------------")
     speech_timestamps = run_vad(audio_1d, models["vad"], models["vad_get_timestamps"])
-    log.info("🔊 VAD : %d segment(s) détecté(s)", len(speech_timestamps))
+    log.info("VAD : %d segment(s) detecte(s)", len(speech_timestamps))
     for i, ts in enumerate(speech_timestamps):
         s = ts["start"] / SAMPLE_RATE
         e = ts["end"]   / SAMPLE_RATE
-        log.info("  Seg %02d : [%.2fs → %.2fs] (%.2fs)", i + 1, s, e, e - s)
+        log.info("  Seg %02d : [%.2fs -> %.2fs] (%.2fs)", i + 1, s, e, e - s)
     return speech_timestamps
 
 
 def step_diarization(audio_path: str, models: dict, num_speakers=None):
-    log.info("── Diarisation ──────────────────────────────────────")
+    log.info("-- Diarisation --------------------------------------")
     segments = run_diarization(audio_path, models["diarization"], num_speakers)
     speakers = list(set(s["speaker"] for s in segments))
-    log.info("🎙️  %d locuteur(s) : %s", len(speakers), speakers)
+    log.info("%d locuteur(s) : %s", len(speakers), speakers)
     return segments, speakers
 
 
@@ -337,7 +337,7 @@ def step_wake_word(
     workdir: str,
     language: str,
 ):
-    log.info("── Wake word ─────────────────────────────────────────")
+    log.info("-- Wake word -----------------------------------------")
     triggers = []
     for i, ts in enumerate(speech_timestamps):
         start_s = ts["start"] / SAMPLE_RATE
@@ -349,7 +349,7 @@ def step_wake_word(
         text       = transcribe(chunk_path, models["whisper"], language)
         is_trigger = any(v in text for v in WAKE_WORD_VARIANTS)
         speaker    = get_speaker_at(start_s + (end_s - start_s) / 2, diarization_segments)
-        status     = "🔔 OUI" if is_trigger else "—"
+        status     = "[TRIGGER]" if is_trigger else "-"
         log.info('  Seg %02d [%.1fs] "%s"  %s  %s', i + 1, end_s - start_s, text[:42], status, speaker)
 
         if is_trigger:
@@ -362,7 +362,7 @@ def step_wake_word(
                 "active_speaker":  speaker,
             })
 
-    log.info("✅ %d déclenchement(s)", len(triggers))
+    log.info("[OK] %d declenchement(s)", len(triggers))
     return triggers
 
 
@@ -377,21 +377,21 @@ def step_enrollment(
     enroll_path: str = None,
 ):
     """
-    Enrôlement conducteur/passager.
+    Enrolement conducteur/passager.
     - Sans --enroll : utilise les 2 premiers segments VAD de l'audio principal.
     - Avec --enroll : utilise les 2 premiers segments VAD du fichier dédié.
     """
-    log.info("── Enrôlement conducteur/passager ────────────────────")
+    log.info("-- Enrolement conducteur/passager --------------------")
 
     if len(speech_timestamps) < 2:
-        log.warning("⚠️  Moins de 2 segments VAD — enrôlement ignoré")
+        log.warning("[WARN] Moins de 2 segments VAD - enrolement ignore")
         return {}, {}
 
     roles = ["conducteur", "passager"]
     enrollment_embeddings = {}
 
     if enroll_path:
-        log.info("Enrôlement depuis fichier dédié : %s", enroll_path)
+        log.info("Enrolement depuis fichier dedie : %s", enroll_path)
         enroll_wav = os.path.join(workdir, "enroll_converted.wav")
         convert_audio(enroll_path, enroll_wav)
         waveform_e, _ = torchaudio.load(enroll_wav)
@@ -409,7 +409,7 @@ def step_enrollment(
         cp    = os.path.join(workdir, f"enrol_{roles[idx]}.wav")
         sf.write(cp, chunk, SAMPLE_RATE)
         text  = transcribe(cp, models["whisper"], language)
-        log.info('  %s — segment %d : "%s"', roles[idx].upper(), idx + 1, text)
+        log.info('  %s - segment %d : "%s"', roles[idx].upper(), idx + 1, text)
         enrollment_embeddings[roles[idx]] = get_embedding(cp, models["embedding"])
 
     # Embeddings moyens par locuteur
@@ -438,7 +438,7 @@ def step_enrollment(
         if remaining else None
     )
 
-    log.info("📊 Similarité cosinus :")
+    log.info("Similarite cosinus :")
     for spk, emb in speaker_embeddings.items():
         sim_c = cosine_similarity(emb, enrollment_embeddings["conducteur"])
         sim_p = cosine_similarity(emb, enrollment_embeddings["passager"])
@@ -449,7 +449,7 @@ def step_enrollment(
         else:
             role = "occupant"
         role_mapping[spk] = role
-        log.info("  %s  sim_c=%.4f  sim_p=%.4f  → %s", spk, sim_c, sim_p, role.upper())
+        log.info("  %s  sim_c=%.4f  sim_p=%.4f  -> %s", spk, sim_c, sim_p, role.upper())
 
     return role_mapping, enrollment_embeddings
 
@@ -463,7 +463,7 @@ def step_gender_age(
     workdir: str,
 ):
     """Analyse genre (F0) + âge (audeering) par locuteur."""
-    log.info("── Genre + Âge ───────────────────────────────────────")
+    log.info("-- Genre + Age ---------------------------------------")
     gender_results = {}
 
     for spk in speakers_found:
@@ -479,7 +479,7 @@ def step_gender_age(
                     total_duration += len(chunk) / SAMPLE_RATE
 
         if not chunks:
-            log.warning("  ⚠️  %s — pas assez de signal audio", spk)
+            log.warning("  [WARN] %s - pas assez de signal audio", spk)
             continue
 
         full_audio = np.concatenate(chunks)
@@ -488,7 +488,7 @@ def step_gender_age(
 
         result = predict_gender_age(full_audio, models)
         role   = role_mapping.get(spk, "occupant")
-        icon   = "👩" if result["gender"] == "female" else "👨"
+        icon   = "[F]" if result["gender"] == "female" else "[M]"
 
         gender_results[spk] = {
             **result,
@@ -497,19 +497,19 @@ def step_gender_age(
         }
 
         log.info(
-            "  %s %s [%s] → %s (F0: %.0fHz | confiance: %.3f) | âge: %.0f ans | parole: %.1fs",
+            "  %s %s [%s] -> %s (F0: %.0fHz | confiance: %.3f) | âge: %.0f ans | parole: %.1fs",
             icon, spk, role.upper(), result["gender"].upper(),
             result["pitch_f0_mean"], result["confidence"],
             result["age_estimate"], total_duration,
         )
 
-    log.info("✅ Analyse genre+âge terminée")
+    log.info("[OK] Analyse genre+age terminee")
     return gender_results
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 # Pipeline principale
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 
 def run_pipeline(
     audio_file: str,
@@ -530,24 +530,24 @@ def run_pipeline(
     t_pipeline_start = time.perf_counter()
     latency = {}
 
-    # ── Conversion audio ─────────────────────────────────────────────────────
-    log.info("── Conversion audio ─────────────────────────────────")
+    # -- Conversion audio -----------------------------------------------------
+    log.info("-- Conversion audio ---------------------------------")
     wav_path = os.path.join(workdir, "pipeline_audio.wav")
     _t0 = time.perf_counter()
     duration = convert_audio(audio_file, wav_path)
     latency["conversion_audio_s"] = round(time.perf_counter() - _t0, 3)
 
-    # ── Chargement modèles ───────────────────────────────────────────────────
+    # -- Chargement modèles ---------------------------------------------------
     _t0 = time.perf_counter()
     models = load_models(hf_token, whisper_model_size=whisper_model_size, device=device)
     latency["chargement_modeles_s"] = round(time.perf_counter() - _t0, 3)
 
-    # ── Lecture waveform ─────────────────────────────────────────────────────
+    # -- Lecture waveform -----------------------------------------------------
     waveform, _ = torchaudio.load(wav_path)
     audio_1d    = waveform.squeeze(0)
     audio_array = audio_1d.numpy()
 
-    # ── Étapes ───────────────────────────────────────────────────────────────
+    # -- Étapes ---------------------------------------------------------------
     _t0 = time.perf_counter()
     speech_timestamps = step_vad(audio_1d, models)
     latency["vad_s"] = round(time.perf_counter() - _t0, 3)
@@ -568,22 +568,22 @@ def run_pipeline(
     gender_results = step_gender_age(audio_array, diarization_segments, speakers_found, role_mapping, models, workdir)
     latency["genre_age_s"] = round(time.perf_counter() - _t0, 3)
 
-    # ── DER (optionnel) ──────────────────────────────────────────────────────
+    # -- DER (optionnel) ------------------------------------------------------
     der_score = None
     if reference_rttm:
-        log.info("── DER ──────────────────────────────────────────────")
+        log.info("-- DER ----------------------------------------------")
         _t0 = time.perf_counter()
         der_score = compute_der(reference_rttm, diarization_segments)
         latency["der_s"] = round(time.perf_counter() - _t0, 3)
-        log.info("📊 DER : %.2f%%", der_score)
+        log.info("DER : %.2f%%", der_score)
         if der_score <= 30:
-            log.info("✅ DER acceptable pour un prototype mono-micro open source")
+            log.info("[OK] DER acceptable pour un prototype mono-micro open source")
         else:
-            log.warning("⚠️  DER élevé (%.2f%%) — pipeline à optimiser", der_score)
+            log.warning("[WARN] DER eleve (%.2f%%) - pipeline a optimiser", der_score)
 
     latency["total_s"] = round(time.perf_counter() - t_pipeline_start, 3)
 
-    # ── Export JSON ──────────────────────────────────────────────────────────
+    # -- Export JSON ----------------------------------------------------------
     output = {
         "metadata": {
             "story":               "PA-10",
@@ -616,31 +616,31 @@ def run_pipeline(
         os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
         with open(output_path, "w", encoding="utf-8") as f:
             json.dump(output, f, ensure_ascii=False, indent=2)
-        log.info("📄 JSON exporté → %s", output_path)
+        log.info("JSON exporte vers %s", output_path)
     else:
         print(json.dumps(output, ensure_ascii=False, indent=2))
 
-    # ── Récapitulatif ─────────────────────────────────────────────────────────
+    # -- Récapitulatif ---------------------------------------------------------
     log.info("=" * 60)
-    log.info("  RÉCAPITULATIF PA-10")
+    log.info("  RECAPITULATIF PA-10")
     log.info("=" * 60)
     log.info("  Audio         : %s (%.1fs)", os.path.basename(audio_file), duration)
-    log.info("  Locuteurs     : %d → %s", len(speakers_found), speakers_found)
+    log.info("  Locuteurs     : %d -> %s", len(speakers_found), speakers_found)
     log.info("  Segments VAD  : %d", len(speech_timestamps))
     log.info("  Segments diar : %d", len(diarization_segments))
     log.info("  Wake words    : %d", len(triggers))
-    log.info("  DER           : %s", f"{der_score:.2f}%" if der_score is not None else "non calculé (pas de --reference)")
-    log.info("  Modules : VAD ✅ | Diarisation ✅ | Transcription ✅ | Wake word ✅ | Conducteur/Passager ✅ | Genre+Âge ✅ | DER %s", "✅" if der_score is not None else "⏭ (optionnel)")
-    log.info("── Latences ─────────────────────────────────────────")
+    log.info("  DER           : %s", f"{der_score:.2f}%" if der_score is not None else "non calcule (pas de --reference)")
+    log.info("  Modules : VAD OK | Diarisation OK | Transcription OK | Wake word OK | Conducteur/Passager OK | Genre+Age OK | DER %s", "OK" if der_score is not None else "(optionnel)")
+    log.info("-- Latences -----------------------------------------")
     for key, val in latency.items():
         if key != "total_s":
             log.info("  %-30s %.3f s", key, val)
-    log.info("  %-30s %.3f s  ◀ total pipeline", "total_s", latency["total_s"])
+    log.info("  %-30s %.3f s  (total pipeline)", "total_s", latency["total_s"])
     for spk in speakers_found:
         role = role_mapping.get(spk, "?")
         gr   = gender_results.get(spk, {})
-        icon = "👩" if gr.get("gender") == "female" else "👨"
-        log.info("  %s %s → %s | %s (F0: %.0fHz) | %.0f ans",
+        icon = "[F]" if gr.get("gender") == "female" else "[M]"
+        log.info("  %s %s -> %s | %s (F0: %.0fHz) | %.0f ans",
                  icon, spk, role.upper(),
                  gr.get("gender", "?").upper(), gr.get("pitch_f0_mean", 0), gr.get("age_estimate", 0))
     log.info("=" * 60)
@@ -648,15 +648,15 @@ def run_pipeline(
     return output
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 # Point d'entrée
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 
 def main():
     parser = argparse.ArgumentParser(
-        description="PA-10 — Pipeline audio complète (VAD + diarisation + wake word + enrôlement + genre/âge + DER)"
+        description="PA-10 - Pipeline audio complète (VAD + diarisation + wake word + enrôlement + genre/âge + DER)"
     )
-    parser.add_argument("audio",              help="Fichier audio à traiter (wav, mp3, flac, ogg…)")
+    parser.add_argument("audio",              help="Fichier audio à traiter (wav, mp3, flac, ogg...)")
     parser.add_argument("--output",    "-o",  help="Chemin du JSON de sortie (défaut : stdout)")
     parser.add_argument("--enroll",           help="Fichier audio d'enrôlement conducteur/passager séparé")
     parser.add_argument("--reference",        help="Fichier RTTM de vérité terrain pour le calcul du DER (optionnel)")
@@ -668,7 +668,7 @@ def main():
 
     hf_token = os.environ.get("HF_TOKEN")
     if not hf_token:
-        log.error("❌ HF_TOKEN non défini.")
+        log.error("[ERREUR] HF_TOKEN non defini.")
         sys.exit(1)
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
