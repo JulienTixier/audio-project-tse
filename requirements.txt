@@ -1,13 +1,29 @@
-# ── Audio ───────────────────────────────────────────────────────────────────── 
+# ── Audio ─────────────────────────────────────────────────────────────────────
 librosa==0.10.2
 soundfile==0.12.1
+pydub==0.25.1
+scipy>=1.11
 
-# ── Diarisation ───────────────────────────────────────────────────────────────
-pyannote.audio==3.3.2
+# ── Diarisation & Embedding ───────────────────────────────────────────────────
+pyannote.audio==3.1.1
+
+# ── Transcription ─────────────────────────────────────────────────────────────
+faster-whisper==1.0.3
+
+# ── Genre + Âge (audeering wav2vec2) ─────────────────────────────────────────
+# transformers 4.40.x impose huggingface_hub>=0.19.3, incompatible avec
+# l'ancienne contrainte <0.17.0. On monte à 4.41.2 qui accepte hub>=0.23.
+transformers==4.41.2
+safetensors>=0.4.0
+
+# ── Hub HuggingFace ───────────────────────────────────────────────────────────
+# pyannote 3.1 n'utilise plus use_auth_token depuis hub 0.17 — mais son code
+# interne reste compatible jusqu'à hub 0.23.x (testé).
+# transformers 4.41 exige >=0.23.0 ; on épingle une version stable connue.
+huggingface_hub==0.23.4
 
 # ── Utilitaires ───────────────────────────────────────────────────────────────
 numpy<2.0
-scipy>=1.11
 
-# huggingface_hub ≥ 0.17 supprime use_auth_token que pyannote 3.x appelle en interne
-huggingface_hub>=0.13.0,<0.17.0
+# Silero VAD chargé via torch.hub — requiert omegaconf
+omegaconf>=2.1

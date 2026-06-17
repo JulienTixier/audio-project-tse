@@ -1,8 +1,8 @@
 # PA-10 — Pipeline Audio Complète (Docker — Raspberry Pi 5 / Jetson Orin)
 
-Pipeline de traitement audio : **Silero VAD** + **pyannote.audio 3.1** + **faster-whisper**  
+Pipeline de traitement audio : **Silero VAD** + **pyannote.audio 3.1** + **faster-whisper** + **audeering wav2vec2**  
 Entrée : fichier audio (wav, mp3, flac, ogg…)  
-Sortie : JSON avec timestamps par locuteur, wake words détectés, et mapping conducteur/passager
+Sortie : JSON avec timestamps par locuteur, wake words, mapping conducteur/passager, genre/âge, et DER optionnel
 
 ---
 
@@ -12,9 +12,14 @@ Sortie : JSON avec timestamps par locuteur, wake words détectés, et mapping co
 |--------|--------|-------------|
 | VAD | Silero VAD | Détection des segments de parole |
 | Diarisation | pyannote/speaker-diarization-3.1 | Attribution par locuteur |
+| Embedding | pyannote/embedding | Empreinte vocale pour l'enrôlement |
 | Transcription | faster-whisper base INT8 | Transcription CPU-optimisée |
 | Wake word | — | Détection "Hey Assistant" |
 | Enrôlement | pyannote/embedding | Identification conducteur/passager |
+| Genre + Âge | Pitch F0 + audeering/wav2vec2-large-robust-6-ft-age-gender | Genre par autocorrélation, âge par wav2vec2 |
+| DER | pyannote.metrics | Calcul optionnel via fichier RTTM de référence |
+
+*Détection d'émotion : non implémentée dans cette version.*
 
 ---
 
@@ -31,65 +36,58 @@ Sortie : JSON avec timestamps par locuteur, wake words détectés, et mapping co
 ## Installation
 
 ```bash
-# 1. Cloner / copier le projet
-cd pipeline-complete
-
-# 2. Créer le fichier .env
-cp .env.example .env
-# Éditer .env et renseigner votre HF_TOKEN
-
-# 3. Créer les dossiers de travail
+cp .env.example .env   # renseigner HF_TOKEN
 mkdir -p audio output
-
-# 4. Build de l'image (20-30 min sur Pi 5 — télécharge PyTorch + pyannote + Whisper)
-docker compose build
+docker compose build   # ~25-35 min sur Pi 5 (audeering ~1.2 Go supplémentaires)
 ```
 
 ---
 
 ## Utilisation
 
-### Traitement simple (résultat sur stdout)
+### Traitement simple
 
 ```bash
-docker compose run --rm pipeline-complete /data/mon_audio.wav
+docker compose run --rm pipeline_complete /data/mon_audio.wav --output /output/result.json
 ```
 
-### Résultat dans un fichier JSON
+### Avec nombre de locuteurs connu (recommandé)
 
 ```bash
-docker compose run --rm pipeline-complete /data/mon_audio.wav --output /output/result.json
+docker compose run --rm pipeline_complete /data/mon_audio.wav \
+  --num-speakers 2 \
+  --output /output/result.json
 ```
 
-### Avec fichier d'enrôlement séparé (conducteur/passager)
-
-Préparez un fichier audio d'enrôlement avec ce script :
-```
-[silence 2s]
-[PERSONNE 1] "C'est moi, je suis le conducteur."
-[silence 2s]
-[PERSONNE 2] "C'est moi, je suis le passager."
-```
+### Avec fichier d'enrôlement séparé
 
 ```bash
-cp enrol.wav audio/
-docker compose run --rm pipeline-complete /data/mon_audio.wav \
+docker compose run --rm pipeline_complete /data/mon_audio.wav \
   --enroll /data/enrol.wav \
+  --output /output/result.json
+```
+
+### Avec calcul du DER (fichier RTTM de vérité terrain)
+
+```bash
+docker compose run --rm pipeline_complete /data/mon_audio.wav \
+  --reference /data/verite_terrain.rttm \
   --output /output/result.json
 ```
 
 ### Options disponibles
 
 ```
-positional arguments:
+positional:
   audio                 Fichier audio à traiter
 
 options:
   --output, -o          Chemin du JSON de sortie (défaut : stdout)
   --enroll              Fichier audio d'enrôlement conducteur/passager
-  --num-speakers N      Nombre de locuteurs attendu (améliore la diarisation)
+  --reference           Fichier RTTM de vérité terrain pour le DER (optionnel)
+  --num-speakers N      Nombre de locuteurs attendu
   --language LANG       Langue pour Whisper (défaut : fr)
-  --whisper-model SIZE  Taille du modèle Whisper : tiny / base / small (défaut : base)
+  --whisper-model SIZE  tiny / base / small (défaut : base)
 ```
 
 ---
@@ -99,35 +97,28 @@ options:
 ```json
 {
   "metadata": {
-    "audio_file": "mon_audio.wav",
-    "duration_s": 42.5,
-    "processed_at": "2025-06-10T14:32:00",
-    "vad_model": "silero-vad",
-    "diarization_model": "pyannote/speaker-diarization-3.1",
-    "transcription_model": "faster-whisper-base-int8",
-    "speakers_detected": ["SPEAKER_00", "SPEAKER_01"],
-    "num_speakers_detected": 2,
-    "num_vad_segments": 12
+    "audio_file": "audio.wav",
+    "duration_s": 68.3,
+    "genre_model": "pitch-F0-autocorrelation + audeering-wav2vec2",
+    "modules_integres": ["VAD", "diarisation", "transcription", "wake_word", "conducteur_passager", "genre_age", "DER"]
   },
-  "diarization_segments": [
-    { "start": 0.512, "end": 3.840, "speaker": "SPEAKER_00" },
-    { "start": 4.200, "end": 7.120, "speaker": "SPEAKER_01" }
-  ],
-  "wake_word_triggers": [
-    {
-      "segment_id": 3,
-      "timestamp_start": 8.100,
-      "timestamp_end": 9.400,
-      "trigger_word": "hey assistant",
-      "transcript": "hey assistant allume la radio",
-      "active_speaker": "SPEAKER_00"
-    }
-  ],
+  "diarization_segments": [...],
+  "wake_word_triggers": [...],
   "role_mapping": {
     "SPEAKER_00": "conducteur",
     "SPEAKER_01": "passager"
   },
-  "der_score": null
+  "genre_age_par_locuteur": {
+    "SPEAKER_00": {
+      "gender": "male",
+      "confidence": 0.87,
+      "pitch_f0_mean": 118.4,
+      "age_estimate": 34.2,
+      "role": "conducteur",
+      "total_speech_s": 22.1
+    }
+  },
+  "der_score": 18.4
 }
 ```
 
@@ -135,25 +126,23 @@ options:
 
 ## Performance sur Raspberry Pi 5
 
-| Durée audio | Temps estimé (CPU) |
-|-------------|-------------------|
-| 1 min | ~5-10 min |
-| 5 min | ~25-45 min |
-| 15 min | ~75-130 min |
+Le modèle audeering (~1.2 Go) alourdit le build initial mais son inférence reste rapide (traitement par locuteur sur audio concaténé, pas segment par segment).
 
-La pipeline est plus lente que la diarisation seule car elle ajoute la transcription Whisper sur chaque segment VAD.  
-Pour réduire le temps : `--whisper-model tiny` (moins précis, ~2× plus rapide).
+| Durée audio | Temps estimé (CPU) | Avec --whisper-model tiny |
+|-------------|-------------------|--------------------------|
+| 30 s | ~4-7 min | ~3-4 min |
+| 1 min | ~10-15 min | ~6-9 min |
+| 5 min | ~40-60 min | ~25-35 min |
 
 ---
 
 ## Cache des modèles
 
-Les volumes Docker `torch_hub_cache` et `hf_cache` persistent le cache entre les runs.  
-Silero VAD (~3 Mo), pyannote (~300 Mo), et Whisper base (~150 Mo) ne sont téléchargés qu'une seule fois.
-
-Pour forcer un re-téléchargement :
+Les volumes `torch_hub_cache` et `hf_cache` persistent entre les runs.  
+Téléchargements au premier run : Silero (~3 Mo), pyannote (~300 Mo), Whisper base (~150 Mo), audeering (~1.2 Go).
 
 ```bash
+# Forcer un re-téléchargement
 docker volume rm pa10-diarization_torch_hub_cache pa10-diarization_hf_cache
 ```
 
@@ -161,55 +150,13 @@ docker volume rm pa10-diarization_torch_hub_cache pa10-diarization_hf_cache
 
 ## Migration vers Jetson Orin
 
-Deux changements dans le `Dockerfile` :
+Dans le `Dockerfile`, remplacer la base image et supprimer le bloc PyTorch CPU :
 
 ```dockerfile
-# 1. Remplacer la base image
 FROM nvcr.io/nvidia/l4t-pytorch:r36.x.x-pth2.x-py3
-
-# 2. Supprimer le bloc "Install PyTorch CPU"
-# (PyTorch est déjà inclus dans l4t-pytorch)
+# Supprimer le bloc "Install PyTorch CPU"
 ```
 
-Dans `docker-compose.yml`, décommenter le bloc `deploy` :
+Dans `docker-compose.yml`, décommenter le bloc `deploy` GPU.
 
-```yaml
-deploy:
-  resources:
-    reservations:
-      devices:
-        - driver: nvidia
-          count: all
-          capabilities: [gpu]
-```
-
-Sur Jetson, ajouter `--runtime nvidia` si vous utilisez `docker run` directement :
-
-```bash
-docker run --rm --runtime nvidia \
-  --env-file .env \
-  -v $(pwd)/audio:/data:ro \
-  -v $(pwd)/output:/output \
-  pa10-diarization /data/mon_audio.wav --output /output/result.json
-```
-
-Le device CUDA est détecté automatiquement dans `process.py` via `torch.cuda.is_available()`.  
-Aucune modification du code Python n'est nécessaire.
-
----
-
-## Intégration DER (à venir)
-
-La section DER (`der_score` dans le JSON) est prévue pour l'intégration du code Ranim (PA-20).  
-Structure attendue pour le calcul via `pyannote.metrics` :
-
-```python
-from pyannote.core import Annotation, Segment
-from pyannote.metrics.diarization import DiarizationErrorRate
-
-reference = Annotation()
-# Remplir avec les annotations RTTM de référence
-
-metric = DiarizationErrorRate()
-der = metric(reference, hypothesis)
-```
+Aucune modification de `process.py` — le device cuda/cpu est auto-détecté.
