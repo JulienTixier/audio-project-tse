@@ -257,8 +257,8 @@ def predict_gender_age(audio_array: np.ndarray, models: dict) -> dict:
     f0_values = estimate_f0(audio_array)
     if len(f0_values) > 0:
         mean_f0    = float(np.mean(f0_values))
-        gender     = "male" if mean_f0 < 160 else "female"
-        confidence = min(abs(mean_f0 - 160) / 80, 1.0)
+        gender     = "male" if mean_f0 < 190 else "female"
+        confidence = min(abs(mean_f0 - 190) / 95, 1.0)
     else:
         mean_f0, gender, confidence = 0.0, "unknown", 0.0
 
